@@ -39,7 +39,7 @@ def fetch_tweets(auth_token, ct0):
 
     # Step 1: get user ID from screen name
     r = s.get(f"https://x.com/{TARGET}", headers=headers, timeout=15)
-    match = re.search(r'"rest_id":"(\d+)"', r.text)
+    match = re.search(r'rest_id[":]+(\d+)', r.text)
     if not match:
         print(f"Could not find user ID. Response length: {len(r.text)}")
         print(f"First 500 chars: {r.text[:500]}")
