@@ -1,4 +1,4 @@
-﻿var dataByDate = {};
+var dataByDate = {};
 var currentDate = null;
 var currentCategory = "all";
 var DATA_URL = "data/index.json";
