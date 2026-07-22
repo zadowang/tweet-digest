@@ -86,7 +86,7 @@ def collect():
         title = t["text"][:40].strip()
         if len(t["text"]) > 40:
             title = title[:39] + "\u2026"
-        items.append({"title": title, "text": t["text"], "time": t["time"], "category": cat, "score": int(t.get("score", 0))})
+        items.append({"title": title, "text": t["text"], "time": t["time"], "category": cat, "score": int(t.get("score", 0)), "comments": t.get("comments", [])})
         cat_map[cat] = cat_map.get(cat, 0) + 1
 
     categories_list = sorted([{"name": k, "count": v} for k, v in cat_map.items()],
