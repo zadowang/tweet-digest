@@ -22,43 +22,66 @@ def categorize(text):
             return cat
     return "其他"
 
+def try_connect(auth_token, ct0):
+    """Try to create a TwitterClient and fetch user"""
+    from twitter_cli.client import TwitterClient
+    client = TwitterClient(auth_token, ct0)
+    # Try to verify by fetching user profile
+    me = client.fetch_me()
+    print(f"Auth OK: @{me.screen_name}")
+    return client
+
 def collect():
     now = datetime.now(CST)
     yesterday = now - timedelta(days=1)
     cutoff = yesterday.replace(hour=18, minute=0, second=0).isoformat()
-
     print(f"Collecting @{TARGET} tweets since {cutoff}")
 
-    # Use twitter-cli package directly
-    auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "")
-    ct0 = os.environ.get("TWITTER_CT0", "")
+    auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
+    ct0 = os.environ.get("TWITTER_CT0", "").strip()
 
     if not auth_token or not ct0:
         print("ERROR: TWITTER_AUTH_TOKEN and TWITTER_CT0 must be set")
         sys.exit(1)
 
-    from twitter_cli.client import TwitterClient
-    client = TwitterClient(auth_token, ct0)
+    print(f"auth_token length: {len(auth_token)}, ct0 length: {len(ct0)}")
 
+    client = None
+    # Try the given order first
+    try:
+        client = try_connect(auth_token, ct0)
+    except Exception as e1:
+        print(f"First order failed: {e1}")
+        # Try swapped
+        try:
+            client = try_connect(ct0, auth_token)
+            # Update for later use
+            auth_token, ct0 = ct0, auth_token
+        except Exception as e2:
+            print(f"Swapped order also failed: {e2}")
+            print("Both orderings failed. Cookies may be invalid or expired.")
+            sys.exit(1)
+
+    # Fetch user posts
     try:
         raw_tweets = client.fetch_user_posts(TARGET, 50)
     except Exception as e:
-        print(f"Failed to fetch tweets: {e}")
+        print(f"fetch_user_posts failed: {e}")
         sys.exit(1)
 
     tweets = []
     for t in raw_tweets:
+        ts = ""
+        text = ""
         if hasattr(t, "created_at"):
             ts = t.created_at
+            text = t.full_text if hasattr(t, "full_text") else getattr(t, "text", "")
         elif isinstance(t, dict):
             ts = t.get("created_at", "") or t.get("time", "")
-        else:
-            continue
-        if ts and ts >= cutoff:
-            text = t.full_text if hasattr(t, "full_text") else t.get("full_text", "") or t.get("text", "")
+            text = t.get("full_text", "") or t.get("text", "")
+        if ts and ts >= cutoff and text:
             tweets.append({"text": text, "time": ts})
 
-    # Deduplicate
     seen = set()
     unique = []
     for t in tweets:
@@ -67,17 +90,15 @@ def collect():
             seen.add(key)
             unique.append(t)
     unique.sort(key=lambda t: t.get("time", ""), reverse=True)
+    print(f"Collected {len(unique)} tweets in time range")
 
-    print(f"Collected {len(unique)} tweets")
-
-    # Build items
     items = []
     cat_map = {}
     for t in unique:
         cat = categorize(t["text"])
         title = t["text"][:40].strip()
         if len(t["text"]) > 40:
-            title = title[:39] + "…"
+            title = title[:39] + "\u2026"
         items.append({"title": title, "text": t["text"], "time": t["time"], "category": cat})
         cat_map[cat] = cat_map.get(cat, 0) + 1
 
@@ -86,14 +107,14 @@ def collect():
     summary_lines = ["**今日要点**"]
     for ce in categories_list:
         cat_tweets = [t for t in items if t["category"] == ce["name"]]
-        titles = "、".join(t["title"][:15] for t in cat_tweets[:3])
+        titles = "\u3001".join(t["title"][:15] for t in cat_tweets[:3])
         summary_lines.append(f"\n**{ce['name']}**：{titles}")
 
     digest = {
         "meta": {
             "user": TARGET,
             "date": now.strftime("%Y-%m-%d"),
-            "dateRange": f"{yesterday.strftime('%-m/%-d')} 18:00 — {now.strftime('%-m/%-d')} 18:00",
+            "dateRange": f"{yesterday.strftime('%-m/%-d')} 18:00 \u2014 {now.strftime('%-m/%-d')} 18:00",
             "generatedAt": now.strftime("%Y-%m-%d %H:%M"),
         },
         "summary": "\n".join(summary_lines),
@@ -103,21 +124,16 @@ def collect():
 
     date_key = now.strftime("%Y-%m-%d")
     digest_json = json.dumps(digest, ensure_ascii=False, indent=2)
-
     (DATA_DIR / f"{date_key}.json").write_text(digest_json, encoding="utf-8")
     (STATIC_DATA / f"{date_key}.json").write_text(digest_json, encoding="utf-8")
 
-    # Update index (all days)
     all_days = {}
     for f in sorted(DATA_DIR.glob("*.json")):
         try:
             all_days[f.stem] = json.loads(f.read_text(encoding="utf-8"))
         except:
             pass
-
-    index_path = STATIC_DATA / "index.json"
-    index_path.write_text(json.dumps(all_days, ensure_ascii=False, indent=2), encoding="utf-8")
-
+    (STATIC_DATA / "index.json").write_text(json.dumps(all_days, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Saved {len(unique)} tweets for {date_key}")
 
 if __name__ == "__main__":
