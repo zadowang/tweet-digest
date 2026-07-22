@@ -12,7 +12,6 @@ async function init() {
     currentDate = dates[0];
     renderDateNav(dates);
     renderDay(currentDate);
-    // Show QR code for local access (fallback)
     showQrFallback();
   } catch(e) {
     showEmpty();
@@ -22,20 +21,20 @@ async function init() {
 function showQrFallback() {
   var el = document.getElementById("qrBox");
   if (!el) return;
-  var url = window.location.href;
-  // Simple QR using canvas
+  el.innerHTML = "";
   var size = 80;
   var canvas = document.createElement("canvas");
   canvas.width = size; canvas.height = size;
   var ctx = canvas.getContext("2d");
-  var qr = encodeQr(url);
+  var qr = encodeQr(window.location.href);
   var mod = size / qr.length;
   ctx.fillStyle = "#1a1a2e";
   for (var y = 0; y < qr.length; y++)
     for (var x = 0; x < qr[y].length; x++)
       if (qr[y][x]) ctx.fillRect(x*mod, y*mod, mod, mod);
   el.appendChild(canvas);
-  document.getElementById("qrUrl").textContent = url.replace("https://","").replace("http://","");
+  var urlEl = document.getElementById("qrUrl");
+  if (urlEl) urlEl.textContent = window.location.href.replace("https://","").replace("http://","");
 }
 
 function encodeQr(text) {
@@ -73,14 +72,20 @@ function renderDateNav(dates) {
     };
     nav.appendChild(chip);
   });
-  document.getElementById("app").insertBefore(nav, document.getElementById("app").firstChild);
+  var app = document.getElementById("app");
+  if (app.firstChild) app.insertBefore(nav, app.firstChild);
+  else app.appendChild(nav);
 }
 
 function renderDay(date) {
   var day = dataByDate[date];
-  document.getElementById("dateRange").textContent = day.meta.dateRange;
-  document.getElementById("tweetCount").textContent = day.tweets.length + " 条推文";
-  document.getElementById("updateTime").textContent = day.meta.generatedAt || "—";
+  if (!day) return;
+  var drEl = document.getElementById("dateRange");
+  var tcEl = document.getElementById("tweetCount");
+  var utEl = document.getElementById("updateTime");
+  if (drEl) drEl.textContent = day.meta.dateRange;
+  if (tcEl) tcEl.textContent = day.tweets.length + " ???";
+  if (utEl) utEl.textContent = day.meta.generatedAt || "?";
   renderSummary(day.summary);
   renderFilters(day.categories);
   renderTweets(day.tweets);
@@ -88,58 +93,82 @@ function renderDay(date) {
 
 function renderSummary(summary) {
   var body = document.getElementById("summaryBody");
+  if (!body) return;
   body.className = "summary-body summary-text";
-  if(!summary){body.innerHTML="<p>暂无摘要</p>";return;}
+  if (!summary) { body.innerHTML = "<p>????</p>"; return; }
   var html = summary.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");
   html = html.split("\n").filter(function(l){return l.trim()}).map(function(l){
-    return "<p>" + l.replace(/^-\s*/,"• ") + "</p>";
+    return "<p>" + l.replace(/^- */,"? ") + "</p>";
   }).join("");
   body.innerHTML = html;
 }
 
 function renderFilters(categories) {
   var filters = document.getElementById("filters");
+  if (!filters) return;
   var cats = ["all"].concat(categories.map(function(c){return c.name}));
   filters.innerHTML = cats.map(function(c){
-    return '<span class="filter-chip'+(c===currentCategory?" active":"")+'" onclick="filterTweets(\x27'+c+'\x27')">'+(c==="all"?"全部":c)+'</span>';
+    var label = c==="all"?"??":c;
+    var cls = c===currentCategory?" active":"";
+    return "<span class=\"filter-chip" + cls + "\" onclick=\"filterTweets('" + c + "')\">" + label + "</span>";
   }).join("");
 }
 
 function filterTweets(cat) {
   currentCategory = cat;
   document.querySelectorAll(".filter-chip").forEach(function(chip){
-    chip.classList.toggle("active", chip.textContent===cat||(cat==="all"&&chip.textContent==="全部"));
+    chip.classList.toggle("active", chip.textContent===cat||(cat==="all"&&chip.textContent==="??"));
   });
   renderTweets(dataByDate[currentDate].tweets);
 }
 
 function renderTweets(tweets) {
   var grid = document.getElementById("tweetsGrid");
+  if (!grid) return;
   var filtered = currentCategory==="all"?tweets:tweets.filter(function(t){return t.category===currentCategory});
-  if(filtered.length===0){grid.innerHTML='<div class="empty-state"><div class="icon">📭</div><p>该分类下暂无推文</p></div>';return;}
+  if (filtered.length===0) {
+    grid.innerHTML = "<div class=\"empty-state\"><div class=\"icon\">??</div><p>????????</p></div>";
+    return;
+  }
   grid.innerHTML = filtered.map(function(t,i){
     var time = new Date(t.time).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
-    return '<div class="tweet-card" id="tweet-'+i+'" onclick="toggleTweet('+i+')">'+
-      '<div class="tweet-card-header">'+
-        '<span class="tweet-card-title">'+escapeHtml(t.title)+'</span>'+
-        '<span class="tweet-card-category">'+escapeHtml(t.category||"")+'</span>'+
-        '<span class="tweet-card-time">'+time+'</span>'+
-        '<span class="arrow">▼</span>'+
-      '</div>'+
-      '<div class="tweet-card-body">'+escapeHtml(t.text)+'</div>'+
-    '</div>';
+    return "<div class=\"tweet-card\" id=\"tweet-" + i + "\" onclick=\"toggleTweet(" + i + ")\">" +
+      "<div class=\"tweet-card-header\">" +
+        "<span class=\"tweet-card-title\">" + escapeHtml(t.title) + "</span>" +
+        "<span class=\"tweet-card-category\">" + escapeHtml(t.category||"") + "</span>" +
+        "<span class=\"tweet-card-time\">" + time + "</span>" +
+        "<span class=\"arrow\">?</span>" +
+      "</div>" +
+      "<div class=\"tweet-card-body\">" + escapeHtml(t.text) + "</div>" +
+    "</div>";
   }).join("");
 }
 
 function toggleTweet(i) {
-  document.getElementById("tweet-"+i).classList.toggle("expanded");
+  var card = document.getElementById("tweet-"+i);
+  if (card) card.classList.toggle("expanded");
 }
 
-function formatDate(d){var p=d.split("-");return p[1]+"/"+p[2]}
-function escapeHtml(t){var d=document.createElement("div");d.textContent=t;return d.innerHTML}
-function showEmpty(){
-  document.getElementById("dateRange").textContent="暂无数据";
-  document.getElementById("summaryBody").innerHTML='<div class="loading">还没有收集到推文数据，稍后再来看看</div>';
-  document.getElementById("tweetsGrid").innerHTML='<div class="empty-state"><div class="icon">🐦</div><p>还没有推文数据</p></div>';
+function formatDate(d) {
+  var p = d.split("-");
+  return p[1] + "/" + p[2];
 }
+
+function escapeHtml(t) {
+  var d = document.createElement("div");
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+function showEmpty() {
+  var drEl = document.getElementById("dateRange");
+  var tcEl = document.getElementById("tweetCount");
+  var sbEl = document.getElementById("summaryBody");
+  var tgEl = document.getElementById("tweetsGrid");
+  if (drEl) drEl.textContent = "????";
+  if (tcEl) tcEl.textContent = "";
+  if (sbEl) sbEl.innerHTML = "<div class=\"loading\">?????????????????</div>";
+  if (tgEl) tgEl.innerHTML = "<div class=\"empty-state\"><div class=\"icon\">??</div><p>???????</p></div>";
+}
+
 init();
