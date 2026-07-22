@@ -1,5 +1,5 @@
-﻿"""Daily collector for GitHub Actions — uses twitter-cli client directly"""
-import json, os, sys
+﻿"""Daily collector — with full error tracing"""
+import json, os, sys, traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,49 +26,73 @@ def collect():
     now = datetime.now(CST)
     yesterday = now - timedelta(days=1)
     cutoff = yesterday.replace(hour=18, minute=0, second=0).isoformat()
-    print(f"Collecting @{TARGET} tweets since {cutoff}")
+    print(f"Starting collection for {TARGET}, cutoff={cutoff}", flush=True)
 
     auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
     ct0 = os.environ.get("TWITTER_CT0", "").strip()
+    print(f"auth_token: {'SET' if auth_token else 'MISSING'} (len={len(auth_token)})", flush=True)
+    print(f"ct0: {'SET' if ct0 else 'MISSING'} (len={len(ct0)})", flush=True)
     if not auth_token or not ct0:
-        print("ERROR: Secrets not set")
+        print("FATAL: Secrets not configured", flush=True)
         sys.exit(1)
+
+    print("Importing twitter_cli...", flush=True)
+    try:
+        from twitter_cli import __version__
+        print(f"twitter_cli version: {__version__}", flush=True)
+    except Exception as e:
+        print(f"version check: {e}", flush=True)
 
     from twitter_cli.client import TwitterClient
+    print("Creating client...", flush=True)
     client = TwitterClient(auth_token, ct0)
+    print("Client created OK", flush=True)
 
+    print(f"Fetching tweets for @{TARGET}...", flush=True)
     try:
-        raw_tweets = client.fetch_user_tweets(TARGET, 50)
-    except AttributeError:
-        raw_tweets = client.fetch_tweets_by_screen_name(TARGET, 50)
+        raw_tweets = client.fetch_user_tweets(TARGET, 20)
     except Exception as e:
-        print(f"Fetch error: {e}")
+        print(f"fetch_user_tweets FAILED: {e}", flush=True)
+        traceback.print_exc()
         sys.exit(1)
 
-    print(f"Raw tweets fetched: {len(raw_tweets)}")
+    print(f"Got {len(raw_tweets)} raw tweets", flush=True)
+    if raw_tweets:
+        first = raw_tweets[0]
+        print(f"First tweet type: {type(first).__name__}", flush=True)
+        if hasattr(first, '__dict__'):
+            print(f"First tweet attrs: {list(first.__dict__.keys())[:10]}", flush=True)
 
     tweets = []
     for t in raw_tweets:
-        ts = getattr(t, "created_at", "") or (t.get("created_at", "") if isinstance(t, dict) else "")
+        ts = ""
         text = ""
-        if hasattr(t, "full_text"):
-            text = t.full_text
-        elif hasattr(t, "text"):
-            text = t.text
+        if hasattr(t, "created_at"):
+            ts = t.created_at
+            text = getattr(t, "full_text", "") or getattr(t, "text", "")
         elif isinstance(t, dict):
-            text = t.get("full_text", "") or t.get("text", "")
-        if ts and ts >= cutoff and text:
+            ts = t.get("created_at", "") or t.get("time", "") or t.get("legacy", {}).get("created_at", "")
+            text = t.get("full_text", "") or t.get("text", "") or t.get("legacy", {}).get("full_text", "")
+        if ts and text:
             tweets.append({"text": text, "time": ts})
+
+    print(f"Parsed {len(tweets)} tweets with text+time", flush=True)
+    if tweets:
+        print(f"Latest: {tweets[0]['time']}", flush=True)
+        print(f"Oldest: {tweets[-1]['time']}", flush=True)
+
+    # Filter by time range
+    in_range = [t for t in tweets if t["time"] >= cutoff]
+    print(f"Tweets in range (since {cutoff}): {len(in_range)}", flush=True)
 
     seen = set()
     unique = []
-    for t in tweets:
+    for t in in_range:
         key = t["text"][:40]
         if key not in seen:
             seen.add(key)
             unique.append(t)
     unique.sort(key=lambda t: t["time"], reverse=True)
-    print(f"Tweets in time range: {len(unique)}")
 
     items = []
     cat_map = {}
@@ -112,7 +136,7 @@ def collect():
         except:
             pass
     (STATIC_DATA / "index.json").write_text(json.dumps(all_days, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Saved {len(unique)} tweets for {date_key}")
+    print(f"DONE: saved {len(items)} tweets for {date_key}", flush=True)
 
 if __name__ == "__main__":
     collect()
