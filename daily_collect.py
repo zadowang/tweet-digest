@@ -1,7 +1,8 @@
-﻿"""Daily collector for GitHub Actions — uses twitter-cli with env vars"""
-import json, os, sys
+﻿"""Daily collector — uses requests directly (bypasses twitter-cli verification issues)"""
+import json, os, sys, re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import requests
 
 CST = timezone(timedelta(hours=8))
 TARGET = "whyyoutouzhele"
@@ -22,14 +23,104 @@ def categorize(text):
             return cat
     return "其他"
 
-def try_connect(auth_token, ct0):
-    """Try to create a TwitterClient and fetch user"""
-    from twitter_cli.client import TwitterClient
-    client = TwitterClient(auth_token, ct0)
-    # Try to verify by fetching user profile
-    me = client.fetch_me()
-    print(f"Auth OK: @{me.screen_name}")
-    return client
+BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+
+def fetch_tweets(auth_token, ct0):
+    """Fetch tweets using X GraphQL API"""
+    s = requests.Session()
+    cookie_str = f"auth_token={auth_token}; ct0={ct0}"
+    headers = {
+        "Authorization": f"Bearer {BEARER}",
+        "Cookie": cookie_str,
+        "X-Csrf-Token": ct0,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Content-Type": "application/json",
+    }
+
+    # Step 1: get user ID from screen name
+    r = s.get(f"https://x.com/{TARGET}", headers=headers, timeout=15)
+    match = re.search(r'"rest_id":"(\d+)"', r.text)
+    if not match:
+        print(f"Could not find user ID. Response length: {len(r.text)}")
+        print(f"First 500 chars: {r.text[:500]}")
+        sys.exit(1)
+    user_id = match.group(1)
+    print(f"User ID: {user_id}")
+
+    # Step 2: fetch tweets via GraphQL
+    variables = json.dumps({
+        "userId": user_id,
+        "count": 50,
+        "includePromotedContent": False,
+        "withQuickPromoteEligibilityTweetFields": False,
+        "withVoice": False,
+        "withV2Timeline": True,
+    })
+    features = json.dumps({
+        "profile_label_improvements_pcf_label_in_post_enabled": False,
+        "rweb_tipjar_consumption_enabled": True,
+        "responsive_web_graphql_exclude_directive_enabled": True,
+        "verified_phone_label_enabled": False,
+        "creator_subscriptions_tweet_preview_api_enabled": True,
+        "responsive_web_graphql_timeline_navigation_enabled": True,
+        "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+        "premium_content_api_read_enabled": False,
+        "communities_web_enable_tweet_community_results_fetch": True,
+        "c9s_tweet_anatomy_moderator_badge_enabled": True,
+        "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
+        "responsive_web_grok_analyze_post_followups_enabled": True,
+        "responsive_web_jetfuel_frame": False,
+        "responsive_web_grok_share_attachment_enabled": True,
+        "articles_preview_enabled": True,
+        "responsive_web_edit_tweet_api_enabled": True,
+        "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+        "view_counts_everywhere_api_enabled": True,
+        "longform_notetweets_consumption_enabled": True,
+        "responsive_web_twitter_article_tweet_consumption_enabled": True,
+        "tweet_awards_web_tipping_enabled": False,
+        "responsive_web_grok_show_grok_translated_post": False,
+        "responsive_web_grok_analyze_image_upload_enabled": True,
+        "responsive_web_grok_conversation_starters_enabled": True,
+        "creator_subscriptions_quote_tweet_preview_enabled": False,
+        "freedom_of_speech_not_reach_fetch_enabled": True,
+        "standardized_nudges_misinfo": True,
+        "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+        "rweb_video_timestamps_enabled": True,
+        "longform_notetweets_rich_text_read_enabled": True,
+        "longform_notetweets_inline_media_enabled": True,
+        "responsive_web_enhance_cards_enabled": False,
+    })
+
+    params = {"variables": variables, "features": features}
+    url = f"https://x.com/i/api/graphql/V7H0Ap3rV0G8h_wq_E6y6A/UserTweets"
+    r = s.get(url, params=params, headers=headers, timeout=20)
+
+    data = r.json()
+    entries = []
+    try:
+        instructions = data["data"]["user"]["result"]["timeline_v2"]["timeline"]["instructions"]
+        for inst in instructions:
+            if inst.get("type") != "TimelineAddEntries":
+                continue
+            for entry in inst.get("entries", []):
+                content = entry.get("content", {})
+                if content.get("entryType") != "TimelineTimelineItem":
+                    continue
+                tweet = content.get("itemContent", {}).get("tweet_results", {}).get("result", {})
+                if not tweet:
+                    continue
+                legacy = tweet.get("legacy", {})
+                text = legacy.get("full_text", "")
+                created = legacy.get("created_at", "")
+                if text and created:
+                    entries.append({"text": text, "time": created})
+    except Exception as e:
+        print(f"Parse error: {e}")
+        print(f"Response keys: {list(data.keys())}")
+        sys.exit(1)
+
+    print(f"Fetched {len(entries)} tweets total")
+    return entries
 
 def collect():
     now = datetime.now(CST)
@@ -41,60 +132,27 @@ def collect():
     ct0 = os.environ.get("TWITTER_CT0", "").strip()
 
     if not auth_token or not ct0:
-        print("ERROR: TWITTER_AUTH_TOKEN and TWITTER_CT0 must be set")
+        print("ERROR: Secrets not set")
         sys.exit(1)
 
-    print(f"auth_token length: {len(auth_token)}, ct0 length: {len(ct0)}")
+    entries = fetch_tweets(auth_token, ct0)
 
-    client = None
-    # Try the given order first
-    try:
-        client = try_connect(auth_token, ct0)
-    except Exception as e1:
-        print(f"First order failed: {e1}")
-        # Try swapped
-        try:
-            client = try_connect(ct0, auth_token)
-            # Update for later use
-            auth_token, ct0 = ct0, auth_token
-        except Exception as e2:
-            print(f"Swapped order also failed: {e2}")
-            print("Both orderings failed. Cookies may be invalid or expired.")
-            sys.exit(1)
-
-    # Fetch user posts
-    try:
-        raw_tweets = client.fetch_user_posts(TARGET, 50)
-    except Exception as e:
-        print(f"fetch_user_posts failed: {e}")
-        sys.exit(1)
-
+    # Filter and deduplicate
     tweets = []
-    for t in raw_tweets:
-        ts = ""
-        text = ""
-        if hasattr(t, "created_at"):
-            ts = t.created_at
-            text = t.full_text if hasattr(t, "full_text") else getattr(t, "text", "")
-        elif isinstance(t, dict):
-            ts = t.get("created_at", "") or t.get("time", "")
-            text = t.get("full_text", "") or t.get("text", "")
-        if ts and ts >= cutoff and text:
-            tweets.append({"text": text, "time": ts})
-
     seen = set()
-    unique = []
-    for t in tweets:
-        key = t["text"][:40]
-        if key not in seen:
-            seen.add(key)
-            unique.append(t)
-    unique.sort(key=lambda t: t.get("time", ""), reverse=True)
-    print(f"Collected {len(unique)} tweets in time range")
+    for e in entries:
+        if e["time"] >= cutoff:
+            key = e["text"][:40]
+            if key not in seen:
+                seen.add(key)
+                tweets.append(e)
+
+    tweets.sort(key=lambda t: t["time"], reverse=True)
+    print(f"{len(tweets)} tweets in time range")
 
     items = []
     cat_map = {}
-    for t in unique:
+    for t in tweets:
         cat = categorize(t["text"])
         title = t["text"][:40].strip()
         if len(t["text"]) > 40:
@@ -134,7 +192,7 @@ def collect():
         except:
             pass
     (STATIC_DATA / "index.json").write_text(json.dumps(all_days, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Saved {len(unique)} tweets for {date_key}")
+    print(f"Saved {len(items)} tweets for {date_key}")
 
 if __name__ == "__main__":
     collect()

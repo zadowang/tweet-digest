@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install twitter-cli
+        run: pip install requests
       - name: Collect tweets
         env:
           TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
@@ -43,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v4
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
