@@ -31,12 +31,6 @@ def collect():
     auth_token = os.environ.get("TWITTER_AUTH_TOKEN", "").strip()
     ct0 = os.environ.get("TWITTER_CT0", "").strip()
     print(f"AT len={len(auth_token)} CT0 len={len(ct0)}", flush=True)
-
-    # Auto-swap: auth_token should be longer than ct0
-    if len(auth_token) < len(ct0):
-        print("AUTO-SWAP: cookies were reversed", flush=True)
-        auth_token, ct0 = ct0, auth_token
-
     if not auth_token or not ct0:
         print("FATAL: Secrets missing", flush=True)
         sys.exit(1)
