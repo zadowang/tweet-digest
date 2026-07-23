@@ -2,7 +2,7 @@
 
 on:
   schedule:
-    - cron: "0 10 * * *"  # 18:00 CST
+    - cron: "*/30 * * * *"  # 18:00 CST
   workflow_dispatch:
 
 permissions:
