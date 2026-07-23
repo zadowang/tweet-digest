@@ -58,3 +58,5 @@ footer p{opacity:.7}
 .tweet-images img{max-width:100%;max-height:300px;border-radius:8px;cursor:pointer;transition:transform .2s;box-shadow:0 2px 8px rgba(0,0,0,.1);border:1px solid var(--border)}
 .tweet-images img:hover{transform:scale(1.02);box-shadow:0 4px 16px rgba(0,0,0,.15)}
 .tweet-images img.zoomed{max-height:none;max-width:100%;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;box-shadow:0 8px 40px rgba(0,0,0,.3);cursor:zoom-out}
+
+.image-count{font-size:11px;color:var(--text-secondary);margin-top:4px}
