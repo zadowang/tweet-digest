@@ -1,6 +1,7 @@
 ﻿name: Daily Tweet Digest
 
 on:
+  push:
   schedule:
     - cron: "*/30 * * * *"  # every 30 min, actual collect at 18:00-18:29 CST
   workflow_dispatch:
