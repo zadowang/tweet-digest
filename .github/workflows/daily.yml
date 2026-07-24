@@ -35,7 +35,7 @@ jobs:
           git add data/ static/data/
           if ! git diff --staged --quiet; then
             git commit -m "Daily digest: $(TZ='Asia/Shanghai' date +%Y-%m-%d)"
-            git pull --rebase && git push || echo "Push skipped (already up to date)"
+            for i in 1 2 3; do git pull --rebase && git push && break || sleep 2; done || echo "Push skipped"
           fi
       - name: Setup Pages
         uses: actions/configure-pages@v4
