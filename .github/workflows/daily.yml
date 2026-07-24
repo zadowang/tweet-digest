@@ -2,7 +2,7 @@
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # 18:00 CST
+    - cron: "*/30 * * * *"  # every 30 min, actual collect at 18:00-18:29 CST
   workflow_dispatch:
 
 permissions:
@@ -28,15 +28,6 @@ jobs:
           TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
           TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
         run: python daily_collect.py
-      - name: Commit data
-        run: |
-          git config user.name "tweet-digest-bot"
-          git config user.email "bot@tweet-digest.local"
-          git add data/ static/data/
-          if ! git diff --staged --quiet; then
-            git commit -m "Daily digest: $(TZ='Asia/Shanghai' date +%Y-%m-%d)"
-            for i in 1 2 3; do git pull --rebase && git push && break || sleep 2; done || echo "Push skipped"
-          fi
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
@@ -46,3 +37,13 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Commit data (best-effort)
+        run: |
+          git config user.name "tweet-digest-bot"
+          git config user.email "bot@tweet-digest.local"
+          git add data/ static/data/
+          if ! git diff --staged --quiet; then
+            git commit -m "Daily digest: $(TZ='Asia/Shanghai' date +%Y-%m-%d)"
+            for i in 1 2 3; do git pull --rebase && git push && break || sleep 2; done
+          fi
+        continue-on-error: true
