@@ -27,7 +27,7 @@ def collect():
     cutoff = yesterday.replace(hour=18, minute=0, second=0).isoformat()
     print(f"Collecting @{TARGET}, cutoff={cutoff}", flush=True)
     event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event == "schedule" and (now.hour != 18 or now.minute >= 30):
+    if event == "schedule" and (now.hour != 18):
         print("Not collection window, skipping")
         sys.exit(0)
 
