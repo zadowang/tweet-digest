@@ -1,9 +1,9 @@
 ﻿name: Daily Tweet Digest
 
 on:
-  push:
   schedule:
-    - cron: "*/30 * * * *"  # every 30 min, actual collect at 18:00-18:29 CST
+    - cron: "*/5 * * * *"
+  push:
   workflow_dispatch:
 
 permissions:
@@ -24,11 +24,13 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install twitter-cli
-      - name: Collect tweets
+      - name: Keepalive + Collect
         env:
           TWITTER_AUTH_TOKEN: ${{ secrets.TWITTER_AUTH_TOKEN }}
           TWITTER_CT0: ${{ secrets.TWITTER_CT0 }}
-        run: python daily_collect.py
+        run: |
+          TZ='Asia/Shanghai' date
+          python daily_collect.py
       - name: Setup Pages
         uses: actions/configure-pages@v4
       - name: Upload artifact
@@ -42,7 +44,7 @@ jobs:
         run: |
           git config user.name "tweet-digest-bot"
           git config user.email "bot@tweet-digest.local"
-          git add data/ static/data/
+          git add data/ static/data/ heartbeat.txt
           if ! git diff --staged --quiet; then
             git commit -m "Daily digest: $(TZ='Asia/Shanghai' date +%Y-%m-%d)"
             for i in 1 2 3; do git pull --rebase && git push && break || sleep 2; done
