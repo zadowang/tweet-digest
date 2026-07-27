@@ -3,6 +3,7 @@
 on:
   schedule:
     - cron: "50 9 * * *"  # 17:50 CST
+  workflow_dispatch:
 
 permissions:
   contents: write
