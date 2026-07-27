@@ -1,0 +1,24 @@
+﻿name: Heartbeat
+
+on:
+  schedule:
+    - cron: "50 9 * * *"  # 17:50 CST
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push heartbeat
+        run: |
+          git config user.name "tweet-digest-bot"
+          git config user.email "bot@tweet-digest.local"
+          echo "$(TZ='Asia/Shanghai' date)" > heartbeat.txt
+          git add heartbeat.txt
+          if ! git diff --staged --quiet; then
+            git commit -m "Heartbeat $(TZ='Asia/Shanghai' date +%Y-%m-%d)"
+            git push || true
+          fi
