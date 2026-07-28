@@ -8,3 +8,4 @@ echo %date% %time% > trigger.txt
 git add trigger.txt
 git commit -m "Daily trigger %date%"
 git push
+echo Done - GitHub Actions will handle collection
